@@ -3,12 +3,21 @@ const cors = require('cors');
 const axios = require('axios');
 require('dotenv').config();
 
+const mongoose = require('mongoose');
+const Transcript = require('./models/Transcript');
 const app = express();
 const PORT = process.env.PORT || 3001;
+
 
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// MongoDB Connection
+const MONGODB_URI = process.env.MONGODB_URI;
+mongoose.connect(MONGODB_URI)
+  .then(() => console.log('MongoDB Connected'))
+  .catch(err => console.log('MongoDB Connection Error:', err));
 
 // Claude API Configuration
 const CLAUDE_API_KEY = process.env.CLAUDE_API_KEY;
@@ -97,8 +106,17 @@ app.post('/api/analyze', async (req, res) => {
       return res.status(500).json({ error: 'Failed to parse Claude response' });
     }
     
-    const analysisData = JSON.parse(jsonMatch[0]);
-    return res.json(analysisData);
+ const analysisData = JSON.parse(jsonMatch[0]);
+
+// Save transcript and analysis to database
+const newTranscript = new Transcript({
+  rawTranscript: transcript,
+  analysis: analysisData
+});
+
+await newTranscript.save();
+
+return res.json(analysisData);
     
   } catch (error) {
     console.error('Error analyzing transcript:', error);
@@ -112,6 +130,32 @@ app.post('/api/analyze', async (req, res) => {
       error: 'Failed to analyze transcript',
       details: error.message
     });
+  }
+});
+
+
+// Route to get transcript history
+app.get('/api/transcripts', async (req, res) => {
+  try {
+    const transcripts = await Transcript.find().sort({ createdAt: -1 });
+    res.json(transcripts);
+  } catch (error) {
+    console.error('Error fetching transcripts:', error);
+    res.status(500).json({ error: 'Failed to fetch transcripts' });
+  }
+});
+
+// Route to get a single transcript by ID
+app.get('/api/transcripts/:id', async (req, res) => {
+  try {
+    const transcript = await Transcript.findById(req.params.id);
+    if (!transcript) {
+      return res.status(404).json({ error: 'Transcript not found' });
+    }
+    res.json(transcript);
+  } catch (error) {
+    console.error('Error fetching transcript:', error);
+    res.status(500).json({ error: 'Failed to fetch transcript' });
   }
 });
 
